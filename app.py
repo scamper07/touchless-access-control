@@ -96,15 +96,18 @@ def get_keys(lockid):
             else:
                 keys = Keys.query.filter_by(LockID = lockid, IsActive=1).all()
 
+                if len(keys) < 1:
+                    return "404", 404 
+                            
                 for key in keys:
                     return_value += key.TagID + key.KeyValue
             #return jsonify({'data': [key.serialized for key in keys]})
             return return_value
         else:
-            return jsonify({'data': 'fail'})
+            return "404", 404 
     except Exception as e:
         print(e)
-        return jsonify({'data': 'fail'})
+        return "404", 404 
 
 @app.route('/api/addkey', methods = ['POST'])
 def add_keys():
