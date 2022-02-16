@@ -73,9 +73,14 @@ input:checked + .slider:before {
   border-radius: 50%;
 }
 	</style>
+	<script>
+		function AutoCalculateMandateOnChange(element){
+			var x = document.getElementById("keyid");   
+		}
+	</script>
 	</head>
  
-<body>
+<body>        
 	<div class="page-header text-center">
 		<input class="btn btn-link" type="submit" value=""/>
 		<h1 class="display-4">Touchless Access Control Tag Manager</h1>
@@ -92,6 +97,7 @@ input:checked + .slider:before {
 	<div class="row">
 	<div class="col-sm-4" ></div>
     <div class="col-sm-4">
+		<p>{{ error_message }}</p>
 		<form method="post" action="/">
 			<div class="d-grid gap-2">
 			<select class="form-select" name=selectedlock >
@@ -122,8 +128,11 @@ input:checked + .slider:before {
 							</tr>							
 							<tr>
 								<td>
+									<form method="post" action="/">
+										<input readonly style="border: 0px;" type="hidden" name="togglekeyid" value="{{key.id}}">
 									Activate/Deactivate: 
-									<label class="switch" value="toggle" name="checkbox" onchange="toggleHandler(this)"> <!--this.form.submit();-->
+									<label class="switch" value="toggle" name="checkbox" onchange="this.form.submit()">
+										
 										{% if key.isactive is defined and key.isactive|int() == 1 %}
 										<input value="1" name="checkbox_{{ key.id }}" type="checkbox" checked>
 										{% else %}
@@ -131,12 +140,14 @@ input:checked + .slider:before {
 				   						{% endif %}	
 										<span class="slider round"></span>
 									  </label>
+									</form>
 								</td>
 								<td>
-									<button class="btn" value="Delete" name="deletekey"><i class="fa fa-trash"></i></button>
+									<form method="post" action="/">
+										<button class="btn" value="{{key.id}}" name="deletekey"><i class="fa fa-trash"></i></button>
+									</form>
 								</td>
 
-									<!--<input class="btn-danger" type="submit" value="Delete" name="deletekey"/><i class="fa fa-home"></i></td>-->
 							</tr>
 						</tbody>
 						</table>		
