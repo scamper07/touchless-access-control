@@ -1,8 +1,7 @@
 from operator import xor
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, flash, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import null
-import random
 
 app = Flask(__name__)
 app.debug = True
@@ -12,7 +11,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tac.db'
 
 db = SQLAlchemy(app)
 
-selected_lock=null
+selected_lock_backup=None
 
 MASTER_KEY="73737373A5A5A5A5373737375A5A5A5A"
 
@@ -89,13 +88,18 @@ def get_locks():
 @app.route('/api/getkey', defaults={'lockid': None}, methods = ['GET'])
 @app.route('/api/getkey/<lockid>', methods = ['GET'])
 def get_keys(lockid):
+    return_value = ""
     try:
         if request.method == 'GET':
             if not lockid:
                 keys = Keys.query.all()            
             else:
-                keys = Keys.query.filter_by(LockID = lockid).all()
-            return jsonify({'data': [key.serialized for key in keys]})
+                keys = Keys.query.filter_by(LockID = lockid, IsActive=1).all()
+
+                for key in keys:
+                    return_value += key.TagID + key.KeyValue
+            #return jsonify({'data': [key.serialized for key in keys]})
+            return return_value
         else:
             return jsonify({'data': 'fail'})
     except Exception as e:
@@ -137,54 +141,72 @@ def delete_key(keyid):
 #web app
 @app.route("/", methods=['GET', 'POST'])
 def index():
+    global selected_lock_backup
+
     selected_lock = 0
     locks = Locks.query.all()
     data = [lock.serialized for lock in locks]
     
     data_keys=null
-    
-    if request.method == 'POST':
-        if request.form.get('refresh'):
-            print("In Refresh...")
-            selected_lock = request.form.get('selectedlock')
-            print(selected_lock)
-            keys = Keys.query.filter_by(LockID=selected_lock).all()                                                                                           
-            data_keys = [key.serialized for key in keys]
-            print(data_keys)
-            return render_template("index.html", data=data, keys=data_keys, selected_lock=selected_lock)
-        elif request.form.get('deletekey'):
-            print("In Delete Key...")
-            selected_lock = request.form.get('selectedlock')
-            deletekey_id = request.form.get('keyid')
-            key = Keys.query.filter_by(KeyID=deletekey_id).first()        
-            db.session.delete(key)
-            db.session.commit()            
-            keys = Keys.query.filter_by(LockID=selected_lock).all()
-            data_keys = [key.serialized for key in keys]
-            return render_template("index.html", data=data, keys=data_keys, selected_lock=selected_lock)
-        elif request.form.get('addkey'):
-            print("In Add Key...")
-            new_key = request.form.get('newkey')
-            print(new_key)
-            new_key = new_key*4                    
-            new_key = xor_two_str(new_key, MASTER_KEY)
-            
-            print(new_key)
+    try:
+        if request.method == 'POST':
+            if request.form.get('refresh'):
+                print("In Refresh...")
+                selected_lock = request.form.get('selectedlock')
+                print(selected_lock)
+                selected_lock_backup = selected_lock
+                keys = Keys.query.filter_by(LockID=selected_lock).all()                                                                                           
+                data_keys = [key.serialized for key in keys]
+                print(data_keys)
+                return render_template("index.html", data=data, keys=data_keys, selected_lock=selected_lock)
+            elif request.form.get('deletekey'):
+                print("In Delete Key...")
+                selected_lock = request.form.get('selectedlock')
+                deletekey_id = request.form.get('deletekey')
+                key = Keys.query.filter_by(TagID=deletekey_id).first()        
+                db.session.delete(key)
+                db.session.commit()            
+                keys = Keys.query.filter_by(LockID=selected_lock_backup).all()
+                data_keys = [key.serialized for key in keys]
+                return render_template("index.html", data=data, keys=data_keys, selected_lock=selected_lock_backup)
+            elif request.form.get('addkey'):
+                print("In Add Key...")
+                new_key = request.form.get('newkey')
+                print(new_key)
+                new_key = new_key*4                    
+                new_key = xor_two_str(new_key, MASTER_KEY)
+                print(new_key)
+                selected_lock = request.form.get('selectedlock')
+                db.session.add(Keys(TagID=request.form.get('newkey').upper(),KeyValue=new_key, LockID=request.form.get('selectedlock'), IsActive=1)) #by default Key is activated
+                db.session.commit()
 
-            #print(request.form.get('newkey'), request.form.get('selectedlock'))
-            selected_lock = request.form.get('selectedlock')
-            db.session.add(Keys(TagID=request.form.get('newkey').upper(),KeyValue=new_key, LockID=request.form.get('selectedlock'), IsActive=1)) #by default Key is activated
-            db.session.commit()
+                keys = Keys.query.filter_by(LockID=selected_lock).all()                                                                                           
+                data_keys = [key.serialized for key in keys]
+                return render_template("index.html", data=data, keys=data_keys, selected_lock=selected_lock)
+            else:  
+                print("In toggle Key...")
+                print(request.form['togglekeyid'])
+                toggle_key =request.form['togglekeyid']
+                keys = Keys.query.filter_by(TagID=toggle_key).first()
+                toggle_key_isactive = keys.IsActive
 
-            keys = Keys.query.filter_by(LockID=selected_lock).all()                                                                                           
-            data_keys = [key.serialized for key in keys]
-            return render_template("index.html", data=data, keys=data_keys, selected_lock=selected_lock)
-        else:  
-            keys = Keys.query.filter_by(LockID=selected_lock).all()                                                                                           
-            data_keys = [key.serialized for key in keys]          
-            return render_template("index.html", data=data, keys=data_keys, selected_lock=selected_lock)
-    elif request.method == 'GET':                                                                                                       
-        return render_template("index.html", data=data, selected_lock=selected_lock)
+                if toggle_key_isactive == 1:
+                    keys.IsActive = 0
+                else:
+                    keys.IsActive = 1
+
+                db.session.commit()      
+                keys = Keys.query.filter_by(LockID=selected_lock_backup).all()                                                                                           
+                data_keys = [key.serialized for key in keys]                                                                                                
+                return render_template("index.html", data=data, keys=data_keys, selected_lock=selected_lock_backup)
+        elif request.method == 'GET':                                                                                                       
+            return render_template("index.html", data=data, selected_lock=selected_lock)
+    except Exception as e:
+        print(e)
+        error_message=""
+        if "UNIQUE constraint failed" in str(e):
+            error_message = "Please Enter Unique TagID"
+        return render_template("index.html", data=data, selected_lock=selected_lock, error_message=error_message)
     
 if __name__ == '__main__':
 	app.run(host='0.0.0.0', port=8080)
