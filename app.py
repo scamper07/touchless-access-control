@@ -1,3 +1,4 @@
+from operator import xor
 from flask import Flask, request, jsonify, render_template
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import null
@@ -12,6 +13,8 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tac.db'
 db = SQLAlchemy(app)
 
 selected_lock=null
+
+MASTER_KEY="73737373A5A5A5A5373737375A5A5A5A"
 
 # enable Foreign Key constraint
 def _fk_pragma_on_connect(dbapi_con, con_record):  # noqa
@@ -41,23 +44,34 @@ class Locks(db.Model):
 
 class Keys(db.Model):	
 	__tablename__ = 'keys'
-	__table_args__ = {'sqlite_autoincrement': True}
-	KeyID = db.Column(db.Integer, primary_key=True, nullable=True)
+	TagID = db.Column(db.String(8), unique=True, primary_key=True, nullable=True)
 	KeyValue = db.Column(db.String(128), unique=True, nullable=False)
+	IsActive = db.Column(db.Integer, nullable=False)
 	LockID = db.Column(db.Integer, db.ForeignKey('locks.LockID'), nullable=False)
 
-	def __init__(self, KeyID, KeyValue, LockID):
-		self.KeyID = KeyID
+	def __init__(self, TagID, KeyValue, IsActive, LockID):
+		self.TagID = TagID
 		self.KeyValue = KeyValue
+		self.IsActive = IsActive
 		self.LockID = LockID
 
 	@property
 	def serialized(self):
 		return {
-            'id': self.KeyID,
+            'id': self.TagID,
             'value': self.KeyValue,
             'lockid': self.LockID,
+            'isactive': self.IsActive
         }
+
+# Utils
+def change_to_be_hex(s):
+    return int(s,base=16)
+    
+def xor_two_str(str1,str2):
+    a = change_to_be_hex(str1)
+    b = change_to_be_hex(str2)
+    return hex(a ^ b)[2:].upper()
 
 # APIs
 @app.route('/api/getlock', methods = ['GET'])
@@ -150,16 +164,25 @@ def index():
             return render_template("index.html", data=data, keys=data_keys, selected_lock=selected_lock)
         elif request.form.get('addkey'):
             print("In Add Key...")
-            print(request.form.get('newkey'), request.form.get('selectedlock'))
+            new_key = request.form.get('newkey')
+            print(new_key)
+            new_key = new_key*4                    
+            new_key = xor_two_str(new_key, MASTER_KEY)
+            
+            print(new_key)
+
+            #print(request.form.get('newkey'), request.form.get('selectedlock'))
             selected_lock = request.form.get('selectedlock')
-            id = random.randrange(100,2000)
-            db.session.add(Keys(KeyID=id,KeyValue=request.form.get('newkey'), LockID=request.form.get('selectedlock')))
+            db.session.add(Keys(TagID=request.form.get('newkey').upper(),KeyValue=new_key, LockID=request.form.get('selectedlock'), IsActive=1)) #by default Key is activated
             db.session.commit()
+
             keys = Keys.query.filter_by(LockID=selected_lock).all()                                                                                           
             data_keys = [key.serialized for key in keys]
             return render_template("index.html", data=data, keys=data_keys, selected_lock=selected_lock)
-        else:            
-            return render_template("index.html")
+        else:  
+            keys = Keys.query.filter_by(LockID=selected_lock).all()                                                                                           
+            data_keys = [key.serialized for key in keys]          
+            return render_template("index.html", data=data, keys=data_keys, selected_lock=selected_lock)
     elif request.method == 'GET':                                                                                                       
         return render_template("index.html", data=data, selected_lock=selected_lock)
     
